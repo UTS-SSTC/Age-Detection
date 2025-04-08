@@ -1,3 +1,4 @@
+/.vscode
 /data/verified_image/*
 !/data/verified_image/README.md
 /data/wiki/*

@@ -8,9 +8,8 @@
 - Anaconda
 - VSCode
 - Git
-- WSL2 (Optional)
-- NVIDIA Graphics (Optional)
-- NVIDIA CUDA Toolkit (Optional)
+- NVIDIA Graphics
+- NVIDIA CUDA Toolkit
 
 **Steps**
 
@@ -18,7 +17,7 @@
 2. Navigate into the cloned repository directory<br>`cd Age-Detection`
 3. Create a new Conda environment named "Age-Detection" with Python 3.11.9<br>`conda create -n "Age-Detection" python=3.11.9`
 4. Activate the newly created Conda environment<br>`conda activate Age-Detection`
-5. Install all the required dependencies specified in the requirements.txt file<br>`pip install -r requirements.txt`
+5. Install all the required dependencies specified in the requirements.txt file<br>`pip install -r requirements/requirements-normal.txt`<br>`pip install -r requirements/requirements-pytorch.txt`
 6. Open the entire folder in VSCode for development
 7. Note: If you need to use TensorFlow's GPU acceleration, you must run the entire project in WSL2 to get support, as TensorFlow's GPU acceleration has been deprecated on Windows.
 
