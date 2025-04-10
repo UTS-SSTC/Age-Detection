@@ -5,3 +5,4 @@ matplotlib==3.10.1
 ipykernel==6.29.5
 torchinfo==1.8.0
 deepface==0.0.93
+tf-keras==2.19.0
