@@ -232,9 +232,10 @@ def convert_mat_dataframe(mat_file, columns, dict_key):
             df[columns[index]] = item[0]
     return df
 
-def process_wiki_metadata(mat_file_path, min_age=0, max_age=100, verified_image_path="./data/verified_image/"):
+def process_wiki_metadata(mat_file_path, min_age=0, max_age=100, verified_image_path="./data/verified_image/",
+                         use_cached=False, cache_path="./data/processed_data.csv"):
     """
-    Process the Wiki dataset metadata from a .mat file.
+    Process the Wiki dataset metadata from a .mat file or load from a cached CSV file.
     
     Parameters:
     -----------
@@ -246,12 +247,41 @@ def process_wiki_metadata(mat_file_path, min_age=0, max_age=100, verified_image_
         Maximum age to include in the processed data
     verified_image_path : str
         Path to the folder containing verified images
+    use_cached : bool
+        Whether to load data from cache file if it exists
+    cache_path : str
+        Path to save/load processed data cache
         
     Returns:
     --------
     pandas.DataFrame
         Processed metadata DataFrame
     """
+    # Check if cache exists and should be used
+    if use_cached and os.path.exists(cache_path):
+        # Load the cached data
+        wiki_metadata = pd.read_csv(cache_path)
+        
+        # Convert date column back to datetime
+        if 'dob_py' in wiki_metadata.columns:
+            wiki_metadata['dob_py'] = pd.to_datetime(wiki_metadata['dob_py'])
+        
+        # Convert face_location back to numpy arrays if it's stored as string
+        if 'face_location' in wiki_metadata.columns and wiki_metadata['face_location'].dtype == 'object':
+            def convert_face_location(x):
+                if isinstance(x, str):
+                    try:
+                        # Remove brackets and split by spaces
+                        return np.array([float(val) for val in x.strip('[]').split()])
+                    except:
+                        # If parsing fails, return an empty array
+                        return np.array([])
+                return x
+            
+            wiki_metadata['face_location'] = wiki_metadata['face_location'].apply(convert_face_location)
+        
+        return wiki_metadata
+    
     # Definition of columns for metadata files
     columns_wiki = ["dob", "year_photo_taken", "full_path", "gender", "name", "face_location", "face_score", "second_face_score"]
     
@@ -270,11 +300,15 @@ def process_wiki_metadata(mat_file_path, min_age=0, max_age=100, verified_image_
     wiki_metadata["name"] = wiki_metadata["name"].apply(select_first_element)
     wiki_metadata["full_path"] = wiki_metadata["full_path"].apply(select_first_element)
     wiki_metadata["face_location"] = wiki_metadata["face_location"].apply(select_first_element)
+    pre_na_size = len(wiki_metadata)
     wiki_metadata = wiki_metadata.dropna(subset=wiki_metadata.drop(["second_face_score"], axis=1).columns)
+    post_na_size = len(wiki_metadata)
     
     # Calculating age when photo was taken
     wiki_metadata["age"] = calculate_age(wiki_metadata)
+    pre_age_filter_size = len(wiki_metadata)
     wiki_metadata = wiki_metadata[(wiki_metadata["age"] >= min_age) & (wiki_metadata["age"] < max_age)]
+    post_age_filter_size = len(wiki_metadata)
     
     # Clarifying gender class
     wiki_metadata["gender"] = wiki_metadata["gender"].apply(clarify_gender)
@@ -285,9 +319,18 @@ def process_wiki_metadata(mat_file_path, min_age=0, max_age=100, verified_image_
     
     # Checking if photo is in verified folder
     wiki_metadata["image_is_verified"] = wiki_metadata.apply(is_verified, args=(verified_image_path, "gender"), axis=1)
+    pre_verify_size = len(wiki_metadata)
     wiki_metadata = wiki_metadata[wiki_metadata["image_is_verified"] == 1]
+    post_verify_size = len(wiki_metadata)
     
     # Counting number of pixels in each image
     wiki_metadata.loc[:, "number_pixels"] = count_pixels(wiki_metadata)
+    
+    # Save processed data to cache
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    
+    # Save to CSV
+    wiki_metadata.to_csv(cache_path, index=False)
     
     return wiki_metadata
