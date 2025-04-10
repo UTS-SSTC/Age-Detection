@@ -183,27 +183,6 @@ def is_verified(row, folder, feature):
     else:
         return 0
 
-def count_pixels(df):
-    """
-    Count the number of pixels in each image.
-    
-    Parameters:
-    -----------
-    df : pandas.DataFrame
-        DataFrame containing 'new_path' column with image paths
-        
-    Returns:
-    --------
-    list
-        List of pixel counts for each image
-    """
-    nb_pixels_image_list = []
-    for index, row in df.iterrows():
-        with Image.open(row["new_path"]) as img:
-            width, height = img.size
-            nb_pixels_image_list.append(width * height)
-    return nb_pixels_image_list
-
 # ===== DATA PROCESSING FUNCTIONS =====
 
 def convert_mat_dataframe(mat_file, columns, dict_key):
@@ -261,25 +240,6 @@ def process_wiki_metadata(mat_file_path, min_age=0, max_age=100, verified_image_
     if use_cached and os.path.exists(cache_path):
         # Load the cached data
         wiki_metadata = pd.read_csv(cache_path)
-        
-        # Convert date column back to datetime
-        if 'dob_py' in wiki_metadata.columns:
-            wiki_metadata['dob_py'] = pd.to_datetime(wiki_metadata['dob_py'])
-        
-        # Convert face_location back to numpy arrays if it's stored as string
-        if 'face_location' in wiki_metadata.columns and wiki_metadata['face_location'].dtype == 'object':
-            def convert_face_location(x):
-                if isinstance(x, str):
-                    try:
-                        # Remove brackets and split by spaces
-                        return np.array([float(val) for val in x.strip('[]').split()])
-                    except:
-                        # If parsing fails, return an empty array
-                        return np.array([])
-                return x
-            
-            wiki_metadata['face_location'] = wiki_metadata['face_location'].apply(convert_face_location)
-        
         return wiki_metadata
     
     # Definition of columns for metadata files
@@ -323,8 +283,13 @@ def process_wiki_metadata(mat_file_path, min_age=0, max_age=100, verified_image_
     wiki_metadata = wiki_metadata[wiki_metadata["image_is_verified"] == 1]
     post_verify_size = len(wiki_metadata)
     
-    # Counting number of pixels in each image
-    wiki_metadata.loc[:, "number_pixels"] = count_pixels(wiki_metadata)
+    # Rename columns before dropping unnecessary ones
+    wiki_metadata = wiki_metadata.rename(columns={'new_file_name': 'file_name', 'new_path': 'file_path'})
+    
+    # Drop specified columns
+    columns_to_drop = ['dob', 'year_photo_taken', 'full_path', 'name', 'face_location', 
+                      'face_score', 'second_face_score', 'dob_py', 'image_is_verified']
+    wiki_metadata = wiki_metadata.drop(columns=columns_to_drop)
     
     # Save processed data to cache
     # Create directory if it doesn't exist
