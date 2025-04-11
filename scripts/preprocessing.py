@@ -1,10 +1,8 @@
-#!/usr/bin/env python
-# coding: utf-8
-
 import numpy as np
 import pandas as pd
 import scipy.io
 import os
+import shutil
 from datetime import datetime, timedelta
 from PIL import Image
 
@@ -97,6 +95,28 @@ def clarify_gender(gender):
         gender = "female"
     return gender
 
+def sanitize_name(name):
+    """
+    Replace spaces with hyphens and remove any special characters from name.
+    
+    Parameters:
+    -----------
+    name : str
+        Name that may contain spaces or special characters
+        
+    Returns:
+    --------
+    str
+        Sanitized name with spaces replaced by hyphens
+    """
+    if isinstance(name, str):
+        # Replace spaces with hyphens
+        sanitized = name.replace(" ", "-")
+        # Remove any other problematic characters for filenames
+        sanitized = ''.join(c for c in sanitized if c.isalnum() or c in '-_.')
+        return sanitized
+    return str(name)
+
 def define_new_file_name(row):
     """
     Create a descriptive file name based on dataframe row.
@@ -111,7 +131,7 @@ def define_new_file_name(row):
     str
         New file name in the format "{index}_{name}_{gender}_{age}.jpg"
     """
-    return str(row.name)+"_"+row["name"]+"_"+row["gender"]+"_"+str(row["age"])+".jpg"
+    return f"{row.name}_{row['name']}_{row['gender']}_{row['age']}.jpg"
 
 def define_new_path(row, path, feature):
     """
@@ -131,7 +151,7 @@ def define_new_path(row, path, feature):
     str
         Full path for the new file
     """
-    return path+row[feature]+"/"+str(row.name)+"_"+row["name"]+"_"+row["gender"]+"_"+str(row["age"])+".jpg"
+    return f"{path}{row[feature]}/{row.name}_{row['name']}_{row['gender']}_{row['age']}.jpg"
 
 def stratify_age_data(df, ranges_age = [10, 20, 30, 40, 50, 60, 70, 100], sample_size = 1000):
     """
@@ -211,8 +231,71 @@ def convert_mat_dataframe(mat_file, columns, dict_key):
             df[columns[index]] = item[0]
     return df
 
+def copy_verified_images(df, source_base_path, target_base_path="./data/processed/"):
+    """
+    Copy verified images to a new location with sanitized filenames.
+    
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        DataFrame containing 'file_path' and 'sanitized_path' columns
+    source_base_path : str
+        Base path of the source images
+    target_base_path : str
+        Base path to copy the images to
+    
+    Returns:
+    --------
+    int
+        Number of successfully copied images
+    """
+    # Create target directories if they don't exist
+    os.makedirs(os.path.join(target_base_path, "male"), exist_ok=True)
+    os.makedirs(os.path.join(target_base_path, "female"), exist_ok=True)
+    
+    success_count = 0
+    error_count = 0
+    
+    print(f"Copying verified images to {target_base_path}...")
+    
+    for idx, row in df.iterrows():
+        source_path = row["new_path"]  # Original path with original filename
+        # Create target path with sanitized filename
+        target_path = os.path.join(
+            target_base_path, 
+            row["gender"], 
+            f"{sanitize_name(row['original_name'])}_{row['gender']}_{row['age']}.jpg"
+        )
+        
+        try:
+            # Check if the source exists
+            if os.path.exists(source_path):
+                # Copy the file
+                shutil.copy2(source_path, target_path)
+                success_count += 1
+                
+                # Print progress periodically
+                if success_count % 100 == 0:
+                    print(f"Copied {success_count} images...")
+            else:
+                error_count += 1
+                if error_count < 10:  # Limit error messages to avoid spam
+                    print(f"Warning: Source file not found: {source_path}")
+                elif error_count == 10:
+                    print("Too many errors, suppressing further messages...")
+        except Exception as e:
+            error_count += 1
+            if error_count < 10:  # Limit error messages to avoid spam
+                print(f"Error copying {source_path} to {target_path}: {str(e)}")
+            elif error_count == 10:
+                print("Too many errors, suppressing further messages...")
+    
+    print(f"Image copying complete. Successfully copied {success_count} images. Encountered {error_count} errors.")
+    return success_count
+
 def process_wiki_metadata(mat_file_path, min_age=0, max_age=100, verified_image_path="./data/verified_image/",
-                         use_cached=False, cache_path="./data/processed_data.csv"):
+                         processed_image_path="./data/processed/", use_cached=False, cache_path="./data/processed_data.csv",
+                         copy_images=True):
     """
     Process the Wiki dataset metadata from a .mat file or load from a cached CSV file.
     
@@ -226,10 +309,14 @@ def process_wiki_metadata(mat_file_path, min_age=0, max_age=100, verified_image_
         Maximum age to include in the processed data
     verified_image_path : str
         Path to the folder containing verified images
+    processed_image_path : str
+        Path to copy processed images with sanitized filenames
     use_cached : bool
         Whether to load data from cache file if it exists
     cache_path : str
         Path to save/load processed data cache
+    copy_images : bool
+        Whether to copy verified images to processed_image_path with sanitized names
         
     Returns:
     --------
@@ -240,55 +327,94 @@ def process_wiki_metadata(mat_file_path, min_age=0, max_age=100, verified_image_
     if use_cached and os.path.exists(cache_path):
         # Load the cached data
         wiki_metadata = pd.read_csv(cache_path)
+        print(f"Loaded cached metadata from {cache_path}")
+        print(f"Dataset contains {len(wiki_metadata)} records.")
         return wiki_metadata
+    
+    print("Processing Wiki metadata from .mat file...")
     
     # Definition of columns for metadata files
     columns_wiki = ["dob", "year_photo_taken", "full_path", "gender", "name", "face_location", "face_score", "second_face_score"]
     
     # Converting metadata Matlab file to pandas dataframe
     wiki_metadata = convert_mat_dataframe(mat_file_path, columns_wiki, "wiki")
+    print(f"Initial records from .mat file: {len(wiki_metadata)}")
     
     # Converting date of birth from Matlab serial date number to pandas datetime
+    print("Converting dates...")
     wiki_metadata["dob_py"] = wiki_metadata["dob"].apply(convert_date)
     
     # Removing rows with invalid date of birth
     old_size_wiki = len(wiki_metadata)
     wiki_metadata = wiki_metadata[wiki_metadata["dob_py"].notna()]
     new_size_wiki = len(wiki_metadata)
+    print(f"Removed {old_size_wiki - new_size_wiki} records with invalid dates. Remaining: {new_size_wiki}")
     
     # Removing missing values and unnecessary numpy array levels
+    print("Processing array fields...")
     wiki_metadata["name"] = wiki_metadata["name"].apply(select_first_element)
     wiki_metadata["full_path"] = wiki_metadata["full_path"].apply(select_first_element)
     wiki_metadata["face_location"] = wiki_metadata["face_location"].apply(select_first_element)
     pre_na_size = len(wiki_metadata)
     wiki_metadata = wiki_metadata.dropna(subset=wiki_metadata.drop(["second_face_score"], axis=1).columns)
     post_na_size = len(wiki_metadata)
+    print(f"Removed {pre_na_size - post_na_size} records with missing values. Remaining: {post_na_size}")
     
     # Calculating age when photo was taken
+    print("Calculating ages...")
     wiki_metadata["age"] = calculate_age(wiki_metadata)
     pre_age_filter_size = len(wiki_metadata)
     wiki_metadata = wiki_metadata[(wiki_metadata["age"] >= min_age) & (wiki_metadata["age"] < max_age)]
     post_age_filter_size = len(wiki_metadata)
+    print(f"Removed {pre_age_filter_size - post_age_filter_size} records outside age range [{min_age}, {max_age}). Remaining: {post_age_filter_size}")
     
     # Clarifying gender class
+    print("Processing gender information...")
     wiki_metadata["gender"] = wiki_metadata["gender"].apply(clarify_gender)
     
-    # Adding new file name and paths
+    # Adding new file name and paths with original names (for verification)
+    print("Creating file paths for verification...")
     wiki_metadata["new_file_name"] = wiki_metadata.apply(define_new_file_name, axis=1)
     wiki_metadata["new_path"] = wiki_metadata.apply(define_new_path, args=(verified_image_path, "gender"), axis=1)
     
     # Checking if photo is in verified folder
+    print("Checking for verified images...")
     wiki_metadata["image_is_verified"] = wiki_metadata.apply(is_verified, args=(verified_image_path, "gender"), axis=1)
     pre_verify_size = len(wiki_metadata)
     wiki_metadata = wiki_metadata[wiki_metadata["image_is_verified"] == 1]
     post_verify_size = len(wiki_metadata)
+    print(f"Kept {post_verify_size} verified images out of {pre_verify_size} total.")
+    
+    # Now sanitize the names (AFTER verification)
+    print("Sanitizing filenames (replacing spaces with hyphens)...")
+    # Store original name before sanitizing (might be needed for later reference)
+    wiki_metadata["original_name"] = wiki_metadata["name"]
+    # Sanitize the name column
+    wiki_metadata["name"] = wiki_metadata["name"].apply(sanitize_name)
+    # Update file names and paths with sanitized names - remove row index from filename
+    wiki_metadata["sanitized_file_name"] = wiki_metadata.apply(
+        lambda row: f"{sanitize_name(row['original_name'])}_{row['gender']}_{row['age']}.jpg", 
+        axis=1
+    )
+    wiki_metadata["sanitized_path"] = wiki_metadata.apply(
+        lambda row: f"{processed_image_path}{row['gender']}/{sanitize_name(row['original_name'])}_{row['gender']}_{row['age']}.jpg", 
+        axis=1
+    )
+    
+    # Copy verified images to processed directory with sanitized names if requested
+    if copy_images:
+        copy_verified_images(wiki_metadata, verified_image_path, processed_image_path)
     
     # Rename columns before dropping unnecessary ones
-    wiki_metadata = wiki_metadata.rename(columns={'new_file_name': 'file_name', 'new_path': 'file_path'})
+    wiki_metadata = wiki_metadata.rename(columns={
+        'sanitized_file_name': 'file_name', 
+        'sanitized_path': 'file_path'
+    })
     
     # Drop specified columns
-    columns_to_drop = ['dob', 'year_photo_taken', 'full_path', 'name', 'face_location', 
-                      'face_score', 'second_face_score', 'dob_py', 'image_is_verified']
+    columns_to_drop = ['dob', 'year_photo_taken', 'full_path', 'original_name', 'face_location', 
+                      'face_score', 'second_face_score', 'dob_py', 'image_is_verified',
+                      'new_file_name', 'new_path']
     wiki_metadata = wiki_metadata.drop(columns=columns_to_drop)
     
     # Save processed data to cache
@@ -296,6 +422,8 @@ def process_wiki_metadata(mat_file_path, min_age=0, max_age=100, verified_image_
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
     
     # Save to CSV
+    print(f"Saving processed metadata to {cache_path}...")
     wiki_metadata.to_csv(cache_path, index=False)
+    print(f"Processing complete. Final dataset contains {len(wiki_metadata)} records.")
     
     return wiki_metadata
