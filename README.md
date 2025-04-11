@@ -13,12 +13,13 @@
 
 **Steps**
 
-1. Clone the Age-Detection repository from GitHub to your local machine<br>`git clone https://github.com/UTS-SSTC/Age-Detection.git`
-2. Navigate into the cloned repository directory<br>`cd Age-Detection`
-3. Create a new Conda environment named "Age-Detection" with Python 3.11.9<br>`conda create -n "Age-Detection" python=3.11.9`
-4. Activate the newly created Conda environment<br>`conda activate Age-Detection`
-5. Install all the required dependencies specified in the requirements.txt file<br>`pip install -r requirements/requirements-normal.txt`<br>`pip install -r requirements/requirements-pytorch.txt`
-6. Open the entire folder in VSCode for development
+1. Fork the Age-Detection repository
+2. Clone the forked Age-Detection repository from GitHub to your local machine<br>`git clone https://github.com/<your-username>/Age-Detection.git`
+3. Navigate into the cloned repository directory<br>`cd Age-Detection`
+4. Create a new Conda environment named "Age-Detection" with Python 3.11.9<br>`conda create -n "Age-Detection" python=3.11.9`
+5. Activate the newly created Conda environment<br>`conda activate Age-Detection`
+6. Install all the required dependencies specified in the requirements.txt file<br>`pip install -r requirements/requirements-normal.txt`<br>`pip install -r requirements/requirements-pytorch.txt`
+7. Open the entire folder in VSCode for development
 
 ## Rules
 
