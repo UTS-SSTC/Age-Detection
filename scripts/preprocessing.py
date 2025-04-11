@@ -3,6 +3,9 @@ import pandas as pd
 import scipy.io
 import os
 import shutil
+import re
+import string
+import unicodedata
 from datetime import datetime, timedelta
 from PIL import Image
 
@@ -95,27 +98,80 @@ def clarify_gender(gender):
         gender = "female"
     return gender
 
-def sanitize_name(name):
+def clean_text(text, replace_spaces=True, remove_punct=True, normalize_unicode=True, lowercase=False):
     """
-    Replace spaces with hyphens and remove any special characters from name.
+    Clean text by replacing spaces, removing punctuation, and normalizing unicode.
+    Adapted from cleantext module's functionality.
     
     Parameters:
     -----------
-    name : str
-        Name that may contain spaces or special characters
+    text : str
+        Input text to clean
+    replace_spaces : bool
+        Replace spaces with hyphens
+    remove_punct : bool
+        Remove all punctuations
+    normalize_unicode : bool
+        Normalize unicode characters to ASCII equivalents where possible
+    lowercase : bool
+        Convert to lowercase
         
     Returns:
     --------
     str
-        Sanitized name with spaces replaced by hyphens
+        Cleaned text
     """
-    if isinstance(name, str):
-        # Replace spaces with hyphens
-        sanitized = name.replace(" ", "-")
-        # Remove any other problematic characters for filenames
-        sanitized = ''.join(c for c in sanitized if c.isalnum() or c in '-_.')
-        return sanitized
-    return str(name)
+    if not text or not isinstance(text, str):
+        return str(text)
+    
+    # Normalize unicode (convert to closest ASCII representation)
+    if normalize_unicode:
+        # NFD normalization followed by removal of combining characters
+        text = unicodedata.normalize('NFKD', text).encode('ASCII', 'ignore').decode('ASCII')
+    
+    # Convert to lowercase if requested
+    if lowercase:
+        text = text.casefold()
+    
+    # Remove punctuation if requested
+    if remove_punct:
+        text = "".join([char for char in text if char not in string.punctuation])
+    
+    # Replace spaces with hyphens if requested
+    if replace_spaces:
+        text = text.replace(" ", "-")
+    
+    # Remove extra spaces
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    return text
+
+def sanitize_name(name):
+    """
+    Replace spaces with hyphens, remove punctuation, and normalize unicode characters.
+    
+    Parameters:
+    -----------
+    name : str
+        Name that may contain spaces, special characters, or non-ASCII characters
+        
+    Returns:
+    --------
+    str
+        Sanitized name with spaces replaced by hyphens and normalized
+    """
+    # First clean the text using our utility function
+    sanitized = clean_text(name, replace_spaces=True, remove_punct=True, normalize_unicode=True)
+    
+    # Ensure we retain only alphanumeric characters and hyphens
+    # This is important for filenames to work across different systems
+    sanitized = ''.join(c for c in sanitized if c.isalnum() or c in '-_.')
+    
+    # Return empty string as last resort
+    if not sanitized:
+        return "unnamed"
+    
+    return sanitized
 
 def define_new_file_name(row):
     """
@@ -386,7 +442,7 @@ def process_wiki_metadata(mat_file_path, min_age=0, max_age=100, verified_image_
     print(f"Kept {post_verify_size} verified images out of {pre_verify_size} total.")
     
     # Now sanitize the names (AFTER verification)
-    print("Sanitizing filenames (replacing spaces with hyphens)...")
+    print("Sanitizing filenames (normalizing Unicode, removing punctuation, replacing spaces with hyphens)...")
     # Store original name before sanitizing (might be needed for later reference)
     wiki_metadata["original_name"] = wiki_metadata["name"]
     # Sanitize the name column
