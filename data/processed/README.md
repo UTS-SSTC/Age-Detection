@@ -2,7 +2,7 @@
 
 ## Download Link
 
-Due to the lack of data augmentation, it is currently unavailable. Please run the preprocessing cell of the notebook for now.
+https://drive.google.com/file/d/1JYF06jG9pAA1KVbU5izD90tDO_g2OCsA/view?usp=sharing
 
 ## File Structure
 
