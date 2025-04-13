@@ -9,11 +9,10 @@ app = Flask(__name__, template_folder=template_path)
 
 @app.route('/')
 def index():
-    """
-    Route handler for the root URL.
-    Renders the main HTML interface for webcam display and model selection.
-    """
+    # Route handler for the root URL
+    # Renders the main HTML interface for webcam display and model selection
     return render_template('index.html')
+
 
 # Entry point for running the application
 if __name__ == '__main__':
