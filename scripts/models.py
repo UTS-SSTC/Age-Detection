@@ -146,7 +146,7 @@ def load_resnext_101(pretrained=True, train_mode=True, device=None):
 
 def load_all_models(pretrained=True, train_mode=True, device=None):
     """
-    Load all available models.
+    Load all available models into a dictionary.
     
     Parameters:
     -----------
@@ -159,29 +159,30 @@ def load_all_models(pretrained=True, train_mode=True, device=None):
         
     Returns:
     --------
-    list
-        List of loaded models
+    dict
+        Dictionary of loaded models with keys as model names
     """
     if device is None:
         device = get_device()
         
-    models = [
-        load_efficientnet_b0(pretrained, train_mode, device),
-        load_efficientnet_b4(pretrained, train_mode, device),
-        load_resnet_50(pretrained, train_mode, device),
-        load_resnext_101(pretrained, train_mode, device)
-    ]
+    models = {
+        'efficientnet_b0': load_efficientnet_b0(pretrained, train_mode, device),
+        'efficientnet_b4': load_efficientnet_b4(pretrained, train_mode, device),
+        'resnet_50': load_resnet_50(pretrained, train_mode, device),
+        'resnext_101': load_resnext_101(pretrained, train_mode, device)
+    }
     
     return models
 
 def print_model_summaries(models):
     """
-    Print summary information for a list of models.
+    Print summary information for a dictionary of models.
     
     Parameters:
     -----------
-    models : list
-        List of PyTorch models
+    models : dict
+        Dictionary of PyTorch models
     """
-    for model in models:
+    for model_name, model in models.items():
+        print(f"\n=== {model_name} ===")
         print(summary(model))

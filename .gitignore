@@ -1,6 +1,8 @@
 __pycache__
 /.idea
 /.vscode
+/data/augmented/*
+!/data/augmented/README.md
 /data/processed/*
 !/data/processed/README.md
 /data/verified_image/*
