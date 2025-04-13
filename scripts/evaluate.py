@@ -5,6 +5,7 @@ import os
 from PIL import Image
 from torchvision import transforms
 import scripts.preprocessing as sp
+import matplotlib.pyplot as plt
 
 class AgeDataset(Dataset):
     """
@@ -202,3 +203,315 @@ def load_age_data(metadata_path, train_ratio=0.7, val_ratio=0.15,
         'test_df': test_df,
         'metadata_df': metadata_df
     }
+
+
+def compute_accuracy(predictions, labels, plot=False, title=None):
+    """
+    Compute exact match accuracy (after rounding predictions).
+    Optionally plots prediction vs ground truth distribution.
+
+    Parameters
+    ----------
+    predictions : torch.Tensor
+        Model predictions.
+    labels : torch.Tensor
+        Ground truth labels.
+    plot : bool, optional
+        Whether to display a histogram comparison (default: False).
+    title : str, optional
+        Custom plot title.
+
+    Returns
+    -------
+    float
+        Accuracy score in range [0, 1].
+    """
+    predictions = predictions.view(-1).cpu()
+    labels = labels.view(-1).cpu()
+
+    rounded_preds = torch.round(predictions)
+    correct = (rounded_preds == labels).sum().item()
+    accuracy = correct / len(labels)
+
+    if plot:
+        plt.figure(figsize=(8, 5))
+        plt.hist(labels.numpy(), bins=range(int(labels.min()), int(labels.max()) + 2),
+                 alpha=0.6, label='Ground Truth', edgecolor='black')
+        plt.hist(rounded_preds.numpy(), bins=range(int(labels.min()), int(labels.max()) + 2),
+                 alpha=0.6, label='Predictions (Rounded)', edgecolor='black')
+        plt.title(title if title else f"Prediction vs Ground Truth (Accuracy = {accuracy:.4f})")
+        plt.xlabel("Age")
+        plt.ylabel("Frequency")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    return accuracy
+
+def compute_loss(predictions, labels, loss_fn=torch.nn.MSELoss(), plot=False, title=None):
+    """
+    Compute scalar loss value and optionally visualize residual distribution.
+
+    Parameters
+    ----------
+    predictions : torch.Tensor
+        Model predictions.
+    labels : torch.Tensor
+        Ground truth labels.
+    loss_fn : callable
+        PyTorch loss function (default: MSELoss).
+    plot : bool, optional
+        Whether to plot the error distribution (default: False).
+    title : str, optional
+        Plot title.
+
+    Returns
+    -------
+    float
+        Scalar loss value.
+    """
+    predictions = predictions.view(-1).cpu()
+    labels = labels.view(-1).cpu()
+
+    loss = loss_fn(predictions, labels)
+
+    if plot:
+        residuals = (predictions - labels).numpy()
+        plt.figure(figsize=(8, 5))
+        plt.hist(residuals, bins=30, color='lightsalmon', edgecolor='black')
+        plt.axvline(0, color='red', linestyle='--', label='Zero Error')
+        plt.title(title if title else f"Residual Distribution (Loss = {loss.item():.4f})")
+        plt.xlabel("Residual (Prediction - Ground Truth)")
+        plt.ylabel("Frequency")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    return loss.item()
+
+def compute_mae(predictions, labels, plot=False):
+    """
+    Compute Mean Absolute Error (MAE) and optionally plot error distribution.
+
+    Parameters
+    ----------
+    predictions : torch.Tensor
+        Model predictions.
+    labels : torch.Tensor
+        Ground truth labels.
+    plot : bool, optional
+        Whether to plot error histogram (default: False).
+
+    Returns
+    -------
+    float
+        MAE value.
+    """
+    predictions = predictions.view(-1).cpu()
+    labels = labels.view(-1).cpu()
+
+    residuals = torch.abs(predictions - labels)
+    mae = torch.mean(residuals)
+
+    if plot:
+        plt.figure(figsize=(8, 5))
+        plt.hist(residuals.numpy(), bins=30, color='orange', edgecolor='black')
+        plt.axvline(x=0, color='red', linestyle='--', label='Zero Error')
+        plt.title(f"Absolute Error Distribution (MAE = {mae.item():.2f})")
+        plt.xlabel("Absolute Error |Prediction - Ground Truth|")
+        plt.ylabel("Frequency")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    return mae.item()
+
+def compute_mse(predictions, labels, plot=False):
+    """
+    Compute Mean Squared Error (MSE) and optionally plot residual distribution.
+
+    Parameters
+    ----------
+    predictions : torch.Tensor
+        Model predictions.
+    labels : torch.Tensor
+        Ground truth labels.
+    plot : bool, optional
+        Whether to show a residual histogram (default: False).
+
+    Returns
+    -------
+    float
+        MSE value.
+    """
+    predictions = predictions.view(-1).cpu()
+    labels = labels.view(-1).cpu()
+
+    residuals = predictions - labels
+    mse = torch.mean(residuals ** 2)
+
+    if plot:
+        plt.figure(figsize=(8, 5))
+        plt.hist(residuals.numpy(), bins=30, color='lightcoral', edgecolor='black')
+        plt.axvline(0, color='red', linestyle='--', label='Zero Error')
+        plt.title(f"Residual Distribution (MSE = {mse.item():.2f})")
+        plt.xlabel("Residual (Prediction - Ground Truth)")
+        plt.ylabel("Frequency")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    return mse.item()
+
+def compute_rmse(predictions, labels, plot=False):
+    """
+    Compute Root Mean Squared Error (RMSE) and optionally visualize residuals.
+
+    Parameters
+    ----------
+    predictions : torch.Tensor
+        Model predictions.
+    labels : torch.Tensor
+        Ground truth labels.
+    plot : bool, optional
+        Whether to plot residuals (default: False).
+
+    Returns
+    -------
+    float
+        RMSE value.
+    """
+    predictions = predictions.view(-1).cpu()
+    labels = labels.view(-1).cpu()
+
+    residuals = predictions - labels
+    rmse = torch.sqrt(torch.mean(residuals ** 2))
+
+    if plot:
+        plt.figure(figsize=(8, 5))
+        plt.hist(residuals.numpy(), bins=30, color='skyblue', edgecolor='black')
+        plt.axvline(0, color='red', linestyle='--', label='Zero Error')
+        plt.title(f"Residual Distribution (RMSE = {rmse.item():.2f})")
+        plt.xlabel("Residual (Prediction - Ground Truth)")
+        plt.ylabel("Frequency")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    return rmse.item()
+
+def compute_r2(predictions, labels, plot=False):
+    """
+    Compute R² score and optionally plot predicted vs true values.
+
+    Parameters
+    ----------
+    predictions : torch.Tensor
+        Model predictions.
+    labels : torch.Tensor
+        Ground truth labels.
+    plot : bool, optional
+        Whether to plot scatter of predictions vs labels.
+
+    Returns
+    -------
+    float
+        R² score in range (-∞, 1].
+    """
+    predictions = predictions.view(-1).cpu()
+    labels = labels.view(-1).cpu()
+
+    ss_res = torch.sum((labels - predictions) ** 2)
+    ss_tot = torch.sum((labels - torch.mean(labels)) ** 2)
+    r2 = 1 - ss_res / ss_tot
+
+    if plot:
+        plt.figure(figsize=(6, 6))
+        plt.scatter(labels.numpy(), predictions.numpy(), alpha=0.6, color='blue', edgecolors='k')
+        plt.plot([labels.min(), labels.max()], [labels.min(), labels.max()], 'r--', label='Ideal Fit')
+        plt.xlabel("Ground Truth (True Age)")
+        plt.ylabel("Predicted Age")
+        plt.title(f"R² = {r2.item():.4f}")
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+    return r2.item()
+
+def compute_five_off_accuracy(predictions, labels, plot=False):
+    """
+    Compute ±5 error tolerance accuracy and optionally plot error distribution.
+
+    Parameters
+    ----------
+    predictions : torch.Tensor
+        Model predictions.
+    labels : torch.Tensor
+        Ground truth labels.
+    plot : bool, optional
+        Whether to plot absolute error distribution (default: False).
+
+    Returns
+    -------
+    float
+        5-off accuracy score.
+    """
+    predictions = predictions.view(-1).cpu()
+    labels = labels.view(-1).cpu()
+
+    errors = torch.abs(predictions - labels)
+    accuracy = (errors <= 5.0).sum().item() / len(labels)
+
+    if plot:
+        plt.figure(figsize=(8, 5))
+        plt.hist(errors.numpy(), bins=30, color='lightgreen', edgecolor='black')
+        plt.axvline(x=5.0, color='red', linestyle='--', label='±5 Threshold')
+        plt.title("Prediction Error Distribution (5-off Accuracy)")
+        plt.xlabel("Absolute Error (|Prediction - Label|)")
+        plt.ylabel("Frequency")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    return accuracy
+
+def plot_uncertainty_distribution(predictions, labels, bins=30, title="Uncertainty Distribution (Residuals)"):
+    """
+    Plot distribution of residuals (prediction error) for uncertainty visualization.
+
+    Parameters
+    ----------
+    predictions : torch.Tensor
+        Model predictions.
+    labels : torch.Tensor
+        Ground truth labels.
+    bins : int, optional
+        Number of histogram bins (default: 30).
+    title : str, optional
+        Plot title.
+
+    Returns
+    -------
+    None
+    """
+    predictions = predictions.view(-1).cpu()
+    labels = labels.view(-1).cpu()
+    residuals = predictions - labels  # 预测误差（残差）
+
+    plt.figure(figsize=(8, 5))
+    plt.hist(residuals.numpy(), bins=bins, color='lightblue', edgecolor='black')
+    plt.axvline(x=0, color='red', linestyle='--', label='Perfect Prediction (Residual=0)')
+    plt.title(title)
+    plt.xlabel("Residual = Prediction - Ground Truth")
+    plt.ylabel("Frequency")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
