@@ -205,7 +205,7 @@ def load_age_data(metadata_path, train_ratio=0.7, val_ratio=0.15,
     }
 
 
-def compute_accuracy(predictions, labels, plot=False, title=None):
+def compute_accuracy(predictions, labels, plot=False):
     """
     Compute exact match accuracy (after rounding predictions).
     Optionally plots prediction vs ground truth distribution.
@@ -218,8 +218,6 @@ def compute_accuracy(predictions, labels, plot=False, title=None):
         Ground truth labels.
     plot : bool, optional
         Whether to display a histogram comparison (default: False).
-    title : str, optional
-        Custom plot title.
 
     Returns
     -------
@@ -239,7 +237,7 @@ def compute_accuracy(predictions, labels, plot=False, title=None):
                  alpha=0.6, label='Ground Truth', edgecolor='black')
         plt.hist(rounded_preds.numpy(), bins=range(int(labels.min()), int(labels.max()) + 2),
                  alpha=0.6, label='Predictions (Rounded)', edgecolor='black')
-        plt.title(title if title else f"Prediction vs Ground Truth (Accuracy = {accuracy:.4f})")
+        plt.title(f"Prediction vs Ground Truth (Accuracy = {accuracy:.4f})")
         plt.xlabel("Age")
         plt.ylabel("Frequency")
         plt.legend()
@@ -249,7 +247,7 @@ def compute_accuracy(predictions, labels, plot=False, title=None):
 
     return accuracy
 
-def compute_loss(predictions, labels, loss_fn=torch.nn.MSELoss(), plot=False, title=None):
+def compute_loss(predictions, labels, loss_fn=torch.nn.MSELoss(), plot=False):
     """
     Compute scalar loss value and optionally visualize residual distribution.
 
@@ -263,8 +261,6 @@ def compute_loss(predictions, labels, loss_fn=torch.nn.MSELoss(), plot=False, ti
         PyTorch loss function (default: MSELoss).
     plot : bool, optional
         Whether to plot the error distribution (default: False).
-    title : str, optional
-        Plot title.
 
     Returns
     -------
@@ -281,7 +277,7 @@ def compute_loss(predictions, labels, loss_fn=torch.nn.MSELoss(), plot=False, ti
         plt.figure(figsize=(8, 5))
         plt.hist(residuals, bins=30, color='lightsalmon', edgecolor='black')
         plt.axvline(0, color='red', linestyle='--', label='Zero Error')
-        plt.title(title if title else f"Residual Distribution (Loss = {loss.item():.4f})")
+        plt.title(f"Residual Distribution (Loss = {loss.item():.4f})")
         plt.xlabel("Residual (Prediction - Ground Truth)")
         plt.ylabel("Frequency")
         plt.legend()
@@ -482,7 +478,7 @@ def compute_five_off_accuracy(predictions, labels, plot=False):
 
     return accuracy
 
-def plot_uncertainty_distribution(predictions, labels, bins=30, title="Uncertainty Distribution (Residuals)"):
+def plot_uncertainty_distribution(predictions, labels, bins=30):
     """
     Plot distribution of residuals (prediction error) for uncertainty visualization.
 
@@ -494,8 +490,6 @@ def plot_uncertainty_distribution(predictions, labels, bins=30, title="Uncertain
         Ground truth labels.
     bins : int, optional
         Number of histogram bins (default: 30).
-    title : str, optional
-        Plot title.
 
     Returns
     -------
@@ -508,7 +502,7 @@ def plot_uncertainty_distribution(predictions, labels, bins=30, title="Uncertain
     plt.figure(figsize=(8, 5))
     plt.hist(residuals.numpy(), bins=bins, color='lightblue', edgecolor='black')
     plt.axvline(x=0, color='red', linestyle='--', label='Perfect Prediction (Residual=0)')
-    plt.title(title)
+    plt.title("Uncertainty Distribution")
     plt.xlabel("Residual = Prediction - Ground Truth")
     plt.ylabel("Frequency")
     plt.legend()
