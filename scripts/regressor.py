@@ -117,7 +117,7 @@ class EfficientLightGBM(nn.Module):
 
         Returns:
         --------
-         tuple
+        tuple
             Features and labels
         """
         self.eval()
@@ -154,3 +154,67 @@ class EfficientLightGBM(nn.Module):
         X, _ = self._extract_features(dataloader, device)
 
         return self.gbm.predict(X)
+
+    def save_model(self, path):
+        """
+        Saves the model components to a single file.
+
+        Parameters:
+        -----------
+        path : str
+            Path to save model
+        """
+        if not hasattr(self.gbm, 'booster_') or self.gbm.booster_ is None:
+            raise RuntimeError("LightGBM model not trained. Call train_gbm() before saving.")
+
+        state = {
+            'feature_extractor': self.feature_extractor.state_dict(),
+            'lgbm_params': self.gbm.get_params(),
+            'lgbm_model': self.gbm.booster_.model_to_string(),
+        }
+        torch.save(state, path)
+
+    def load_model(self, path):
+        """
+        Loads model components from a saved file.
+
+        Parameters:
+        -----------
+        path : str
+            Path to load model
+        """
+        device = get_device()
+        state = torch.load(path, map_location=device)
+
+        # Feature Extractor Parameter Adaptation
+        src_params = state['feature_extractor']
+        target_params = self.feature_extractor.state_dict()
+
+        # Automatically match different named parameters
+        matched_params = {}
+        for target_key in target_params:
+            possible_src_keys = [
+                target_key,
+                target_key.replace("stem", "0").replace(".conv", ".0.conv"),
+                target_key.replace("stem", "0").replace(".bn", ".1.bn")
+            ]
+
+            for src_key in possible_src_keys:
+                if src_key in src_params:
+                    matched_params[target_key] = src_params[src_key]
+                    break
+            else:
+                raise RuntimeError(f"Parameter {target_key} not found in saved model")
+
+        self.feature_extractor.load_state_dict(matched_params)
+        self.feature_extractor.to(device)
+
+        # Initialize and load the LightGBM model
+        self.gbm = lightgbm.LGBMRegressor(**state['lgbm_params'])
+        self.gbm._Booster = lightgbm.Booster(model_str=state['lgbm_model'])
+        self.gbm._n_features = self.gbm._Booster.num_feature()
+
+        # Set sklearn compatibility properties
+        self.gbm.fitted_ = True
+        self.gbm._n_classes = 1
+        self.gbm._classes_ = np.array([0])
