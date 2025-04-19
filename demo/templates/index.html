@@ -4,9 +4,6 @@
     <meta charset="UTF-8">
     <title>Age Detection Web Interface</title>
 
-    <!-- 删除 face-api.js 引用 -->
-    <!-- <script defer src="https://cdn.jsdelivr.net/npm/face-api.js"></script> -->
-
     <style>
         body {
             margin: 0;
@@ -118,7 +115,6 @@
 </div>
 
 <div class="container">
-    <!-- Webcam feed with overlay canvas -->
     <div class="video-section">
         <div id="video-container">
             <video id="webcam" autoplay muted></video>
@@ -126,7 +122,6 @@
         </div>
     </div>
 
-    <!-- Controls -->
     <div class="control-section">
         <select id="model-select">
             <option value="efficientnet_b0">EfficientNet-B0</option>
