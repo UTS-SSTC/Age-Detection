@@ -1,24 +1,39 @@
-import os
-from flask import Flask, render_template
+from flask import Flask, render_template, request, jsonify
+from deepface import DeepFace
+import os, base64, re
+from io import BytesIO
 
-# Dynamically resolve the absolute path to the templates directory
-template_path = os.path.join(os.path.dirname(__file__), '..', 'templates')
-
-# Initialize the Flask application with the specified template folder
-app = Flask(__name__, template_folder=template_path)
+# Setup Flask app and specify template directory
+app = Flask(__name__, template_folder=os.path.join(os.path.dirname(__file__), 'templates'))
 
 @app.route('/')
 def index():
-    # Handle requests to the root URL.
-    # 
-    # Returns:
-    # --------
-    # render_template : flask.Response
-    #     Renders the 'index.html' page containing the user interface
     return render_template('index.html')
 
+@app.route('/predict', methods=['POST'])
+def predict():
+    try:
+        # Get the image data from the frontend
+        data = request.get_json()
+        image_data = data['image']
+        img_str = re.search(r'base64,(.*)', image_data).group(1)
+        image_bytes = base64.b64decode(img_str)
 
-# Entry point for running the application
+        # Save the image temporarily
+        temp_path = 'temp.jpg'
+        with open(temp_path, 'wb') as f:
+            f.write(image_bytes)
+
+        # Analyze the image using DeepFace
+        result = DeepFace.analyze(temp_path, actions=['age', 'gender'], enforce_detection=False)
+        age = result[0]['age']
+        gender = result[0]['dominant_gender']
+        os.remove(temp_path)
+
+        return jsonify({'age': int(age), 'gender': gender})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
-    # Launch the Flask development server with debugging enabled
     app.run(debug=True)
