@@ -7,6 +7,7 @@ from torchvision import transforms
 import scripts.preprocessing as sp
 import matplotlib.pyplot as plt
 import numpy as np
+import scripts.models as sm
 
 class AgeDataset(Dataset):
     """
@@ -670,7 +671,7 @@ def evaluate_efficient_lgbm(model, dataloader):
     dict
         Evaluation metrics
     """
-    device = get_device()
+    device=sm.get_device()
     preds = torch.tensor(model.predict(dataloader), dtype=torch.float32)
     labels = torch.tensor(np.concatenate([b[1].numpy() for b in dataloader]), dtype=torch.float32)
     return evaluate_metrics(preds, labels, plot=True)
