@@ -7,3 +7,4 @@ torchinfo==1.8.0
 deepface==0.0.93
 tf-keras==2.19.0
 albumentations==2.0.5
+scikit-learn==1.6.1
