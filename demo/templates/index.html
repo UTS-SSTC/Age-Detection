@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Age Detection Web Interface</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 40px;
+        }
+
+        video {
+            border: 2px solid #333;
+            border-radius: 10px;
+            width: 480px;
+            height: 360px;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        .button-container {
+            margin-top: 20px;
+        }
+
+        select, button {
+            padding: 10px;
+            margin: 10px;
+            font-size: 16px;
+            border-radius: 8px;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Age Detection Web Interface</h1>
+
+    <!-- Live webcam video preview -->
+    <video id="webcam" autoplay></video>
+
+    <!-- Model selection and action trigger -->
+    <div class="button-container">
+        <select id="model-select">
+            <option value="efficientnet_b0">EfficientNet-B0</option>
+            <option value="efficientnet_b4">EfficientNet-B4</option>
+            <option value="resnet_50">ResNet-50</option>
+            <option value="resnext_101">ResNeXt-101</option>
+        </select>
+        <button onclick="alert('Model switching not yet implemented')">Switch Model</button>
+    </div>
+
+    <!-- Camera access and stream handling -->
+    <script>
+        const video = document.getElementById("webcam");
+
+        // Request camera access from the browser
+        navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+            .then(stream => {
+                video.srcObject = stream;
+            })
+            .catch(error => {
+                console.error("Camera access error:", error);
+                alert("Camera access was denied or failed.");
+            });
+    </script>
+
+</body>
+</html>
