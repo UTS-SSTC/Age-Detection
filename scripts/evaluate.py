@@ -6,6 +6,7 @@ from PIL import Image
 from torchvision import transforms
 import scripts.preprocessing as sp
 import matplotlib.pyplot as plt
+import numpy as np
 
 class AgeDataset(Dataset):
     """
@@ -509,3 +510,167 @@ def plot_uncertainty_distribution(predictions, labels, bins=30):
     plt.grid(True)
     plt.tight_layout()
     plt.show()
+
+def extract_preds_and_labels(model, dataloader, device):
+    """
+    Extract all predictions and labels for a given model and dataloader.
+    """
+    model.eval()
+    preds, labels = [], []
+    with torch.no_grad():
+        for imgs, labs in dataloader:
+            imgs = imgs.to(device)
+            out = model(imgs)
+            preds.append(out.cpu())
+            labels.append(labs.cpu())
+    return torch.cat(preds), torch.cat(labels)
+
+
+def evaluate_all(model, dataloader, device, plot=True):
+    """
+    Full evaluation: extract preds/labels then compute all metrics and optionally plot.
+    """
+    preds, labels = extract_preds_and_labels(model, dataloader, device)
+    return evaluate_metrics(preds, labels, plot=plot)
+
+
+def evaluate_metrics(predictions, labels, plot=False):
+    """
+    Wrapper to call all seven evaluation functions:
+      - compute_accuracy
+      - compute_loss
+      - compute_mae
+      - compute_mse
+      - compute_rmse
+      - compute_r2
+      - compute_five_off_accuracy
+
+    Parameters:
+    -----------
+    predictions : torch.Tensor
+        Model predictions.
+    labels : torch.Tensor
+        Ground truth labels.
+    plot : bool
+        Whether to enable each function's plotting.
+
+    Returns:
+    --------
+    dict
+        Dictionary of metric names and their computed values.
+    """
+    results = {
+        'ExactAccuracy': compute_accuracy(predictions, labels, plot=False),
+        'Loss': compute_loss(predictions, labels, plot=False),
+        'MAE': compute_mae(predictions, labels, plot=False),
+        'MSE': compute_mse(predictions, labels, plot=False),
+        'RMSE': compute_rmse(predictions, labels, plot=False),
+        'R2': compute_r2(predictions, labels, plot=False),
+        'FiveOffAcc': compute_five_off_accuracy(predictions, labels, plot=False)
+    }
+
+    if plot:
+        compute_accuracy(predictions, labels, plot=True)
+        compute_loss(predictions, labels, plot=True)
+        compute_mae(predictions, labels, plot=True)
+        compute_mse(predictions, labels, plot=True)
+        compute_rmse(predictions, labels, plot=True)
+        compute_r2(predictions, labels, plot=True)
+        compute_five_off_accuracy(predictions, labels, plot=True)
+
+    return results
+
+
+def compare_models(models, dataloader, device, model_names=None, show_plot=True, save_path=None):
+    """
+    Compare multiple models on the same dataset using evaluation metrics and plot results.
+
+    Parameters:
+    -----------
+    models : list of nn.Module
+        List of models to compare
+    dataloader : DataLoader
+        Dataset to evaluate on
+    device : torch.device
+        Device to use for evaluation
+    model_names : list of str (optional)
+        Names of the models (if None, will use index)
+    show_plot : bool
+        Whether to visualize results in a grouped bar chart
+    save_path : str or None
+        If provided, saves the plot to the given file path (e.g., 'results.png' or 'results.pdf')
+
+    Returns:
+    --------
+    dict
+        Dictionary mapping model name to metric results
+    """
+    if model_names is None:
+        model_names = [f"Model_{i+1}" for i in range(len(models))]
+
+    results = {}
+    for model, name in zip(models, model_names):
+        print(f"Evaluating {name}...")
+        model.to(device)
+        metrics = evaluate_all(model, dataloader, device, plot=False)
+        results[name] = metrics
+
+    # Print comparison table
+    print("\n=== Model Comparison ===")
+    all_metrics = list(results[model_names[0]].keys())
+    print(f"{'Metric':<15} " + " ".join([f"{n:<15}" for n in model_names]))
+    for metric in all_metrics:
+        line = f"{metric:<15} "
+        for name in model_names:
+            val = results[name][metric]
+            line += f"{val:<15.4f}"
+        print(line)
+
+    # Plot comparison
+    if show_plot or save_path:
+        x = np.arange(len(all_metrics))
+        width = 0.8 / len(model_names)
+
+        plt.figure(figsize=(12, 6))
+        for i, name in enumerate(model_names):
+            vals = [results[name][m] for m in all_metrics]
+            plt.bar(x + i * width, vals, width, label=name)
+
+        plt.xticks(x + width * (len(model_names) - 1) / 2, all_metrics, rotation=45)
+        plt.ylabel("Metric Value")
+        plt.title("Model Evaluation Comparison")
+        plt.legend()
+        plt.tight_layout()
+        plt.grid(True, axis='y', linestyle='--', alpha=0.6)
+
+        if save_path:
+            plt.savefig(save_path, bbox_inches='tight')
+            print(f"Plot saved to {save_path}")
+        if show_plot:
+            plt.show()
+        else:
+            plt.close()
+
+    return results
+
+
+def evaluate_efficient_lgbm(model, dataloader):
+    """
+    Evaluate an EfficientLightGBM model using the same evaluation metrics.
+
+    Parameters:
+    -----------
+    model : EfficientLightGBM
+        Trained EfficientLightGBM model
+    dataloader : DataLoader
+        DataLoader containing image and age labels
+
+    Returns:
+    --------
+    dict
+        Evaluation metrics
+    """
+    device = get_device()
+    preds = torch.tensor(model.predict(dataloader), dtype=torch.float32)
+    labels = torch.tensor(np.concatenate([b[1].numpy() for b in dataloader]), dtype=torch.float32)
+    return evaluate_metrics(preds, labels, plot=True)
