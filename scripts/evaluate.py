@@ -11,163 +11,150 @@ import scripts.models as sm
 
 class AgeDataset(Dataset):
     """
-    Dataset class for loading age prediction images and corresponding labels.
-    
+    PyTorch Dataset for age prediction.
+
     Parameters:
     -----------
-    metadata_df : pandas.DataFrame
-        DataFrame containing image file paths and age labels
-    transform : torchvision.transforms
-        Image transformations to apply
-    root_dir : str
-        Root directory of the image dataset
+    metadata_df : pd.DataFrame
+        DataFrame containing image file paths and corresponding age labels.
+    transform : torchvision.transforms.Compose, optional
+        Transformations to apply to the images.
     """
-    def __init__(self, metadata_df, transform=None, root_dir="./data/processed/"):
+    def __init__(self, metadata_df, transform=None):
         self.metadata_df = metadata_df
         self.transform = transform
-        self.root_dir = root_dir
-        
+
     def __len__(self):
-        """Return the number of samples in the dataset."""
+        """
+        Return the total number of samples.
+
+        Returns:
+        --------
+        int
+            Number of samples.
+        """
         return len(self.metadata_df)
-    
+
     def __getitem__(self, idx):
         """
-        Get a sample from the dataset.
-        
+        Fetch a single sample by index.
+
         Parameters:
         -----------
         idx : int
-            Index of the sample to get
-            
+            Index of the sample.
+
         Returns:
         --------
         tuple
-            (image, age) pair where image is the transformed image tensor
-            and age is the target age label
+            A tuple of (image_tensor, age_label).
         """
-        if torch.is_tensor(idx):
-            idx = idx.tolist()
-            
-        # Get file path and age from metadata
         row = self.metadata_df.iloc[idx]
         img_path = row['file_path']
         age = row['age']
-        
-        # Load image
+
         try:
             image = Image.open(img_path).convert('RGB')
         except Exception as e:
             print(f"Error loading image {img_path}: {e}")
-            # Return a placeholder black image if the file can't be loaded
             image = Image.new('RGB', (224, 224), color='black')
-            
-        # Apply transforms if available
+
         if self.transform:
             image = self.transform(image)
-            
+
         return image, torch.tensor(age, dtype=torch.float32)
 
 def create_data_transforms(input_size=224):
     """
     Create standard data transformations for train and evaluation sets.
-    
+
     Parameters:
     -----------
     input_size : int
         Size (in pixels) to resize images to
-        
+
     Returns:
     --------
     dict
         Dictionary containing 'train', 'val', and 'test' transforms
     """
-    # Define normalization parameters (ImageNet standard)
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
-    
-    # Create transforms
-    data_transforms = {
-        'train': transforms.Compose([
-            transforms.Resize((input_size, input_size)),
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomRotation(10),
-            transforms.ColorJitter(brightness=0.2, contrast=0.2),
-            transforms.ToTensor(),
-            transforms.Normalize(mean, std)
-        ]),
-        'val': transforms.Compose([
-            transforms.Resize((input_size, input_size)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean, std)
-        ]),
-        'test': transforms.Compose([
-            transforms.Resize((input_size, input_size)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean, std)
-        ])
-    }
-    
-    return data_transforms
 
-def load_age_data(metadata_path, train_ratio=0.7, val_ratio=0.15, 
+    base_transforms = [
+        transforms.Resize((input_size, input_size)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean, std)
+    ]
+
+    train_augmentations = [
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomRotation(10),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2),
+    ]
+
+    return {
+        'train': transforms.Compose(train_augmentations + base_transforms),
+        'val': transforms.Compose(base_transforms),
+        'test': transforms.Compose(base_transforms)
+    }
+
+def load_age_data(metadata_path, train_ratio=0.7, val_ratio=0.15,
                   batch_size=32, input_size=224, num_workers=4, use_cached=True,
                   wiki_mat_path=None, verified_image_path=None, min_age=0, max_age=100):
     """
-    Load age dataset from metadata and create train/val/test DataLoaders.
-    
+    Load and split the Wiki age dataset into train, validation, and test sets.
+
     Parameters:
     -----------
     metadata_path : str
-        Path to the metadata CSV file
+        Path to cached or generated metadata CSV.
     train_ratio : float
-        Proportion of data to use for training
+        Ratio of data to allocate to training.
     val_ratio : float
-        Proportion of data to use for validation
-    test_ratio : float
-        Proportion of data to use for testing
+        Ratio of data to allocate to validation.
     batch_size : int
-        Batch size for DataLoaders
+        Number of samples per batch.
     input_size : int
-        Size (in pixels) to resize images to
+        Image resize dimensions (height and width).
     num_workers : int
-        Number of worker threads for data loading
+        Number of subprocesses to use for data loading.
     use_cached : bool
-        Whether to use cached metadata
-    wiki_mat_path : str
-        Path to wiki.mat file (used if metadata needs to be generated)
-    verified_image_path : str
-        Path to verified images (used if metadata needs to be generated)
+        If True, load metadata from cache. Otherwise, generate from raw .mat.
+    wiki_mat_path : str, optional
+        Path to the .mat file (required if not using cache).
+    verified_image_path : str, optional
+        Path to verified images (required if not using cache).
     min_age : int
-        Minimum age to include
+        Minimum age to filter.
     max_age : int
-        Maximum age to include
-        
+        Maximum age to filter.
+
     Returns:
     --------
     dict
-        Dictionary containing DataLoaders and metadata
+        Dictionary with keys: 'train_loader', 'val_loader', 'test_loader', 'train_df', 'val_df', 'test_df', 'metadata_df'.
     """
     # Load or process metadata
     if use_cached and os.path.exists(metadata_path):
         metadata_df = pd.read_csv(metadata_path)
-        print(f"Loaded cached metadata from {metadata_path}")
+        print(f"[✓] Loaded cached metadata from {metadata_path}")
     else:
         if wiki_mat_path is None or verified_image_path is None:
-            raise ValueError("When not using cached metadata, wiki_mat_path and verified_image_path must be provided")
-        
+            raise ValueError("wiki_mat_path and verified_image_path are required if not using cached metadata")
+
         # Process metadata using the preprocessing module
         metadata_df = sp.process_wiki_metadata(
-            wiki_mat_path, 
-            min_age=min_age, 
-            max_age=max_age, 
+            mat_file_path=wiki_mat_path,
+            min_age=min_age,
+            max_age=max_age,
             verified_image_path=verified_image_path,
             use_cached=False,
             cache_path=metadata_path,
-            copy_images=False  # Avoid copying images during evaluation
+            copy_images=False
         )
-    
-    print(f"Dataset contains {len(metadata_df)} samples")
+
+        print(f"[→] Total samples: {len(metadata_df)}")
     
     # Create data transformations
     data_transforms = create_data_transforms(input_size)
@@ -178,23 +165,19 @@ def load_age_data(metadata_path, train_ratio=0.7, val_ratio=0.15,
     # Split into train, val, test sets
     train_size = int(train_ratio * len(metadata_df))
     val_size = int(val_ratio * len(metadata_df))
-    
+    test_size = len(metadata_df) - train_size - val_size
+
     train_df = metadata_df[:train_size]
-    val_df = metadata_df[train_size:train_size+val_size]
-    test_df = metadata_df[train_size+val_size:]
-    
-    print(f"Train: {len(train_df)}, Validation: {len(val_df)}, Test: {len(test_df)}")
-    
-    # Create datasets
-    train_dataset = AgeDataset(train_df, transform=data_transforms['train'])
-    val_dataset = AgeDataset(val_df, transform=data_transforms['val'])
-    test_dataset = AgeDataset(test_df, transform=data_transforms['test'])
-    
+    val_df = metadata_df[train_size:train_size + val_size]
+    test_df = metadata_df[train_size + val_size:]
+
+    print(f"[✓] Train: {len(train_df)}, Val: {len(val_df)}, Test: {len(test_df)}")
+
     # Create dataloaders
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-    
+    train_loader = DataLoader(AgeDataset(train_df, data_transforms['train']), batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    val_loader = DataLoader(AgeDataset(val_df, data_transforms['val']), batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    test_loader = DataLoader(AgeDataset(test_df, data_transforms['test']), batch_size=batch_size, shuffle=False, num_workers=num_workers)
+
     # Return everything in a dictionary
     return {
         'train_loader': train_loader,
@@ -206,11 +189,9 @@ def load_age_data(metadata_path, train_ratio=0.7, val_ratio=0.15,
         'metadata_df': metadata_df
     }
 
-
-def compute_accuracy(predictions, labels, plot=False):
+def compute_three_off_accuracy(predictions, labels, plot=False):
     """
-    Compute exact match accuracy (after rounding predictions).
-    Optionally plots prediction vs ground truth distribution.
+    Compute ±3 error tolerance accuracy and optionally plot error distribution.
 
     Parameters
     ----------
@@ -219,28 +200,26 @@ def compute_accuracy(predictions, labels, plot=False):
     labels : torch.Tensor
         Ground truth labels.
     plot : bool, optional
-        Whether to display a histogram comparison (default: False).
+        Whether to plot absolute error distribution (default: False).
 
     Returns
     -------
     float
-        Accuracy score in range [0, 1].
+        Accuracy score within ±3 error range.
     """
     predictions = predictions.view(-1).cpu()
     labels = labels.view(-1).cpu()
 
-    rounded_preds = torch.round(predictions)
-    correct = (rounded_preds == labels).sum().item()
-    accuracy = correct / len(labels)
+    errors = torch.abs(predictions - labels)
+    within_3 = (errors <= 3.0).sum().item()
+    accuracy = within_3 / len(labels)
 
     if plot:
         plt.figure(figsize=(8, 5))
-        plt.hist(labels.numpy(), bins=range(int(labels.min()), int(labels.max()) + 2),
-                 alpha=0.6, label='Ground Truth', edgecolor='black')
-        plt.hist(rounded_preds.numpy(), bins=range(int(labels.min()), int(labels.max()) + 2),
-                 alpha=0.6, label='Predictions (Rounded)', edgecolor='black')
-        plt.title(f"Prediction vs Ground Truth (Accuracy = {accuracy:.4f})")
-        plt.xlabel("Age")
+        plt.hist(errors.numpy(), bins=30, color='lightgreen', edgecolor='black')
+        plt.axvline(x=3.0, color='red', linestyle='--', label='±3 Threshold')
+        plt.title("Prediction Error Distribution (±3 Accuracy)")
+        plt.xlabel("Absolute Error (|Prediction - Label|)")
         plt.ylabel("Frequency")
         plt.legend()
         plt.grid(True)
@@ -538,7 +517,7 @@ def evaluate_all(model, dataloader, device, plot=True):
 def evaluate_metrics(predictions, labels, plot=False):
     """
     Wrapper to call all seven evaluation functions:
-      - compute_accuracy
+      - compute_three_off_accuracy
       - compute_loss
       - compute_mae
       - compute_mse
@@ -561,7 +540,7 @@ def evaluate_metrics(predictions, labels, plot=False):
         Dictionary of metric names and their computed values.
     """
     results = {
-        'ExactAccuracy': compute_accuracy(predictions, labels, plot=False),
+        'ThreeOffAccuracy': compute_three_off_accuracy(predictions, labels, plot=False),
         'Loss': compute_loss(predictions, labels, plot=False),
         'MAE': compute_mae(predictions, labels, plot=False),
         'MSE': compute_mse(predictions, labels, plot=False),
@@ -571,7 +550,7 @@ def evaluate_metrics(predictions, labels, plot=False):
     }
 
     if plot:
-        compute_accuracy(predictions, labels, plot=True)
+        compute_three_off_accuracy(predictions, labels, plot=True)
         compute_loss(predictions, labels, plot=True)
         compute_mae(predictions, labels, plot=True)
         compute_mse(predictions, labels, plot=True)
@@ -582,77 +561,57 @@ def evaluate_metrics(predictions, labels, plot=False):
     return results
 
 
-def compare_models(models, dataloader, device, model_names=None, show_plot=True, save_path=None):
+def compare_models(models, dataloader, device, model_names=None, show_plot=True):
     """
-    Compare multiple models on the same dataset using evaluation metrics and plot results.
+    Compare multiple PyTorch models based on evaluation metrics.
 
-    Parameters:
-    -----------
-    models : list of nn.Module
-        List of models to compare
-    dataloader : DataLoader
-        Dataset to evaluate on
+    Parameters
+    ----------
+    models : list
+        A list of PyTorch model instances to be evaluated.
+    dataloader : torch.utils.data.DataLoader
+        DataLoader providing the dataset for evaluation.
     device : torch.device
-        Device to use for evaluation
-    model_names : list of str (optional)
-        Names of the models (if None, will use index)
-    show_plot : bool
-        Whether to visualize results in a grouped bar chart
-    save_path : str or None
-        If provided, saves the plot to the given file path (e.g., 'results.png' or 'results.pdf')
+        The device (CPU or GPU) on which the models are evaluated.
+    model_names : list of str, optional
+        Custom names for the models. If None, default names will be assigned.
+    show_plot : bool, optional
+        If True, display a bar chart comparing the models' performance.
 
-    Returns:
-    --------
+    Returns
+    -------
     dict
-        Dictionary mapping model name to metric results
+        A dictionary where keys are model names and values are dictionaries of evaluation metrics.
     """
     if model_names is None:
-        model_names = [f"Model_{i+1}" for i in range(len(models))]
+        model_names = [f"Model_{i}" for i in range(len(models))]
 
     results = {}
     for model, name in zip(models, model_names):
-        print(f"Evaluating {name}...")
-        model.to(device)
-        metrics = evaluate_all(model, dataloader, device, plot=False)
-        results[name] = metrics
+        print(f"\nEvaluating {name}...")
+        results[name] = evaluate_all(model, dataloader, device, plot=False)
 
-    # Print comparison table
-    print("\n=== Model Comparison ===")
-    all_metrics = list(results[model_names[0]].keys())
-    print(f"{'Metric':<15} " + " ".join([f"{n:<15}" for n in model_names]))
-    for metric in all_metrics:
-        line = f"{metric:<15} "
-        for name in model_names:
-            val = results[name][metric]
-            line += f"{val:<15.4f}"
+    print(f"\n{'Metric':<15} " + " ".join(f"{n:<15}" for n in model_names))
+    for metric in results[model_names[0]]:
+        line = f"{metric:<15} " + " ".join(f"{results[m][metric]:<15.4f}" for m in model_names)
         print(line)
 
-    # Plot comparison
-    if show_plot or save_path:
-        x = np.arange(len(all_metrics))
-        width = 0.8 / len(model_names)
-
+    if show_plot:
+        x = np.arange(len(results[model_names[0]]))
+        width = 0.8 / len(models)
         plt.figure(figsize=(12, 6))
         for i, name in enumerate(model_names):
-            vals = [results[name][m] for m in all_metrics]
+            vals = [results[name][m] for m in results[name]]
             plt.bar(x + i * width, vals, width, label=name)
-
-        plt.xticks(x + width * (len(model_names) - 1) / 2, all_metrics, rotation=45)
-        plt.ylabel("Metric Value")
-        plt.title("Model Evaluation Comparison")
+        plt.xticks(x + width * (len(models) - 1) / 2, list(results[model_names[0]].keys()), rotation=45)
+        plt.ylabel("Metric")
+        plt.title("Model Comparison")
         plt.legend()
         plt.tight_layout()
-        plt.grid(True, axis='y', linestyle='--', alpha=0.6)
-
-        if save_path:
-            plt.savefig(save_path, bbox_inches='tight')
-            print(f"Plot saved to {save_path}")
-        if show_plot:
-            plt.show()
-        else:
-            plt.close()
+        plt.show()
 
     return results
+
 
 
 def evaluate_efficient_lgbm(model, dataloader):
