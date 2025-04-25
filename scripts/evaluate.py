@@ -562,6 +562,27 @@ def evaluate_metrics(predictions, labels, plot=False):
 
 
 def compare_models(models, dataloader, device, model_names=None, show_plot=True):
+    """
+    Compare multiple PyTorch models based on evaluation metrics.
+
+    Parameters
+    ----------
+    models : list
+        A list of PyTorch model instances to be evaluated.
+    dataloader : torch.utils.data.DataLoader
+        DataLoader providing the dataset for evaluation.
+    device : torch.device
+        The device (CPU or GPU) on which the models are evaluated.
+    model_names : list of str, optional
+        Custom names for the models. If None, default names will be assigned.
+    show_plot : bool, optional
+        If True, display a bar chart comparing the models' performance.
+
+    Returns
+    -------
+    dict
+        A dictionary where keys are model names and values are dictionaries of evaluation metrics.
+    """
     if model_names is None:
         model_names = [f"Model_{i}" for i in range(len(models))]
 
