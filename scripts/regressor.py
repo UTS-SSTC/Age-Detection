@@ -1,3 +1,5 @@
+import pickle
+
 import torch
 import lightgbm
 import torch.nn as nn
@@ -43,7 +45,7 @@ def build_feature_extractor(model):
         )
 
 
-class EfficientLightGBM(nn.Module):
+class DeepFeatureLGBM(nn.Module):
     """
     Hybrid deep learning/lightGBM regressor model for end-to-end feature extraction and regression.
 
@@ -56,7 +58,9 @@ class EfficientLightGBM(nn.Module):
     """
 
     def __init__(self, fine_tuned_model=None, light_gbm_config=None):
-        super(EfficientLightGBM, self).__init__()
+        super(DeepFeatureLGBM, self).__init__()
+        self.device = get_device()
+
         # Feature extraction stage
         self.feature_extractor = build_feature_extractor(fine_tuned_model)
 
@@ -96,15 +100,13 @@ class EfficientLightGBM(nn.Module):
         train_loader : torch.utils.data.DataLoader
             Training data loader
         """
-        device = get_device()
-
         # Extract features and labels
-        features, labels = self._extract_features(train_loader, device)
+        features, labels = self._extract_features(train_loader)
 
         # Training regression model
         self.gbm.fit(features, labels, callbacks=[lightgbm.log_evaluation(period=10)])
 
-    def _extract_features(self, dataloader, device):
+    def _extract_features(self, dataloader):
         """
         Batch-wise feature extraction.
 
@@ -112,8 +114,6 @@ class EfficientLightGBM(nn.Module):
         -----------
         dataloader : torch.utils.data.DataLoader
             Training data loader
-        device : torch.device
-            Device used for training (GPU or CPU)
 
         Returns:
         --------
@@ -126,7 +126,7 @@ class EfficientLightGBM(nn.Module):
 
         with torch.no_grad():
             for batch in tqdm(dataloader, desc='Extracting features'):
-                images = batch[0].to(device)
+                images = batch[0].to(self.device)
 
                 batch_features = self.feature_extractor(images)
                 batch_features = torch.flatten(batch_features, start_dim=1).cpu().numpy()
@@ -150,8 +150,7 @@ class EfficientLightGBM(nn.Module):
         numpy.ndarray
             Model predictions (batch_size,)
         """
-        device = get_device()
-        X, _ = self._extract_features(dataloader, device)
+        X, _ = self._extract_features(dataloader)
 
         return self.gbm.predict(X)
 
@@ -164,15 +163,17 @@ class EfficientLightGBM(nn.Module):
         path : str
             Path to save model
         """
-        if not hasattr(self.gbm, 'booster_') or self.gbm.booster_ is None:
-            raise RuntimeError("LightGBM model not trained. Call train_gbm() before saving.")
+        # Save PyTorch feature extractor parameters
+        feature_extractor_state = self.feature_extractor.state_dict()
 
-        state = {
-            'feature_extractor': self.feature_extractor.state_dict(),
-            'lgbm_params': self.gbm.get_params(),
-            'lgbm_model': self.gbm.booster_.model_to_string(),
-        }
-        torch.save(state, path)
+        # Serialize LightGBM model as a byte stream
+        gbm_bytes = pickle.dumps(self.gbm)
+
+        # Save to checkpoint file uniformly
+        torch.save({
+            'feature_extractor_state': feature_extractor_state,
+            'gbm_bytes': gbm_bytes
+        }, path)
 
     def load_model(self, path):
         """
@@ -183,38 +184,11 @@ class EfficientLightGBM(nn.Module):
         path : str
             Path to load model
         """
-        device = get_device()
-        state = torch.load(path, map_location=device)
+        # Load the checkpoint file to the current device
+        checkpoint = torch.load(path, map_location=self.device)
 
-        # Feature Extractor Parameter Adaptation
-        src_params = state['feature_extractor']
-        target_params = self.feature_extractor.state_dict()
+        # Recover Feature Extractor
+        self.feature_extractor.load_state_dict(checkpoint['feature_extractor_state'])
 
-        # Automatically match different named parameters
-        matched_params = {}
-        for target_key in target_params:
-            possible_src_keys = [
-                target_key,
-                target_key.replace("stem", "0").replace(".conv", ".0.conv"),
-                target_key.replace("stem", "0").replace(".bn", ".1.bn")
-            ]
-
-            for src_key in possible_src_keys:
-                if src_key in src_params:
-                    matched_params[target_key] = src_params[src_key]
-                    break
-            else:
-                raise RuntimeError(f"Parameter {target_key} not found in saved model")
-
-        self.feature_extractor.load_state_dict(matched_params)
-        self.feature_extractor.to(device)
-
-        # Initialize and load the LightGBM model
-        self.gbm = lightgbm.LGBMRegressor(**state['lgbm_params'])
-        self.gbm._Booster = lightgbm.Booster(model_str=state['lgbm_model'])
-        self.gbm._n_features = self.gbm._Booster.num_feature()
-
-        # Set sklearn compatibility properties
-        self.gbm.fitted_ = True
-        self.gbm._n_classes = 1
-        self.gbm._classes_ = np.array([0])
+        # Deserialize LightGBM model
+        self.gbm = pickle.loads(checkpoint['gbm_bytes'])

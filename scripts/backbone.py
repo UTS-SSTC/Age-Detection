@@ -8,41 +8,6 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from .models import load_efficientnet_b0, get_device
 
 
-def compute_loss(model, data_loader, device, criterion):
-    """
-    Compute model loss on validation dataset.
-
-    Parameters:
-    -----------
-    model: nn.Module
-        Model to validate
-    data_loader: torch.utils.data.DataLoader
-        Data loader
-    device: torch.device
-        Device to use
-    age_criterion: function
-        Loss function for age prediction
-
-    Returns:
-    --------
-    float
-        Mean validation loss across all batches
-    """
-    model.eval()
-    total_loss = 0.0
-
-    with torch.no_grad():
-        for batch in data_loader:
-            images = batch[0].to(device)
-            labels = batch[1].to(device)
-
-            pred = model(images)
-            loss = criterion(pred, labels)
-            total_loss += loss.item()
-
-    return total_loss / len(data_loader)
-
-
 class FineTunedBackbone(nn.Module):
     """
     Adaptable backbone network for transfer learning with partial parameter freezing fine-tuning.
@@ -86,9 +51,14 @@ class FineTunedBackbone(nn.Module):
             if idx < freeze_idx:
                 param.requires_grad = False
 
+        dummy_input = torch.randn(1, 3, 224, 224).to(get_device())
+        with torch.no_grad():
+            dummy_output = self.backbone(dummy_input)
+        in_features = dummy_output.size(1)
+
         # Add a regression header
         self.age_head = nn.Sequential(
-            nn.Linear(320, 256),
+            nn.Linear(in_features, 256),
             nn.ReLU(),
             nn.Linear(256, 1)
         )
@@ -155,7 +125,15 @@ class FineTunedBackbone(nn.Module):
 
                 total_loss += loss.item()
 
-            val_loss = compute_loss(self, val_loader, device, criterion)
+            self.eval()
+            val_loss = 0.0
+            with torch.no_grad():
+                for batch in val_loader:
+                    images = batch[0].to(device)
+                    labels = batch[1].to(device)
+
+                    val_loss += criterion(self(images), labels).item()
+            val_loss /= len(val_loader)
 
             print(f"Epoch {epoch + 1} | Train Loss: {total_loss / len(train_loader):.4f} | "
                   f"Val Loss: {val_loss:.4f}")
