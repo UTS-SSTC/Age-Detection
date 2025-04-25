@@ -60,7 +60,6 @@ class DeepFeatureLGBM(nn.Module):
     def __init__(self, fine_tuned_model=None, light_gbm_config=None):
         super(DeepFeatureLGBM, self).__init__()
         self.device = get_device()
-
         # Feature extraction stage
         self.feature_extractor = build_feature_extractor(fine_tuned_model)
 
