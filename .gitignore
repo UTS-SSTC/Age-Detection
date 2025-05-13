@@ -9,3 +9,4 @@ __pycache__
 !/data/verified_image/README.md
 /data/wiki/*
 !/data/wiki/README.md
+/models/*
