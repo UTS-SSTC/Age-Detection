@@ -21,7 +21,7 @@ class FineTunedBackbone(nn.Module):
         Backbone constructor function
     pretrained : bool
         Whether to load pretrained weights
-    train_model : bool
+    train_mode : bool
         Whether to set the model to training mode
     freeze_rate : float
         The proportion of frozen parameters in the backbone
