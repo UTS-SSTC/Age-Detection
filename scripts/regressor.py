@@ -1,13 +1,16 @@
 import pickle
 
 import torch
+import joblib
 import lightgbm
+from collections import OrderedDict
 import torch.nn as nn
 import numpy as np
 
 from tqdm import tqdm
 
 from .models import load_efficientnet_b0, get_device
+from .backbone import FineTunedBackbone
 
 
 def build_feature_extractor(model):
@@ -26,23 +29,13 @@ def build_feature_extractor(model):
         Feature extractor
     """
     if model is None:
-        # Directly load the pretrained model
-        backbone = load_efficientnet_b0(
-            pretrained=True,
-            train_mode=False,
-            device=get_device()
-        )
+        model = FineTunedBackbone()
 
-        return nn.Sequential(
-            backbone,
-            nn.Flatten()
-        )
-    else:
-        # Use fine-tuned backbone network
-        return nn.Sequential(
-            model.backbone,
-            nn.Flatten()
-        )
+    return nn.Sequential(
+        model.backbone,
+        model.fc,
+        nn.Flatten()
+    )
 
 
 class DeepFeatureLGBM(nn.Module):
@@ -128,10 +121,13 @@ class DeepFeatureLGBM(nn.Module):
                 images = batch[0].to(self.device)
 
                 batch_features = self.feature_extractor(images)
-                batch_features = torch.flatten(batch_features, start_dim=1).cpu().numpy()
+                # batch_features = torch.flatten(batch_features, start_dim=1).cpu().numpy()
+                batch_features = batch_features.view(batch_features.size(0), -1).cpu().numpy()
 
                 features.append(batch_features)
                 ages.append(batch[1].numpy())
+                # print(f"Batch features shape before flatten: {batch_features.shape}")
+                # break
 
         return np.concatenate(features, axis=0), np.concatenate(ages, axis=0)
 
@@ -153,7 +149,7 @@ class DeepFeatureLGBM(nn.Module):
 
         return self.gbm.predict(X)
 
-    def save_model(self, path):
+    def save_model(self, path, name):
         """
         Saves the model components to a single file.
 
@@ -161,20 +157,14 @@ class DeepFeatureLGBM(nn.Module):
         -----------
         path : str
             Path to save model
+        name : str
+            Name of saved model
         """
-        # Save PyTorch feature extractor parameters
-        feature_extractor_state = self.feature_extractor.state_dict()
+        torch.save(self.feature_extractor.state_dict(), f"{path}/{name}.pth")
 
-        # Serialize LightGBM model as a byte stream
-        gbm_bytes = pickle.dumps(self.gbm)
+        joblib.dump(self.gbm, f"{path}/{name}.pkl")
 
-        # Save to checkpoint file uniformly
-        torch.save({
-            'feature_extractor_state': feature_extractor_state,
-            'gbm_bytes': gbm_bytes
-        }, path)
-
-    def load_model(self, path):
+    def load_model(self, path, name):
         """
         Loads model components from a saved file.
 
@@ -182,12 +172,36 @@ class DeepFeatureLGBM(nn.Module):
         -----------
         path : str
             Path to load model
+        name : str
+            Name of saved model
         """
-        # Load the checkpoint file to the current device
-        checkpoint = torch.load(path, map_location=self.device)
+        def remove_module_prefix(state_dict):
+            """
+            Strip the 'module.' prefix from state_dict keys (if present).
 
-        # Recover Feature Extractor
-        self.feature_extractor.load_state_dict(checkpoint['feature_extractor_state'])
+            When a model is wrapped in torch.nn.DataParallel or DistributedDataParallel,
+            each key is prefixed with 'module. This helper removes that prefix so keys match the original model.
 
-        # Deserialize LightGBM model
-        self.gbm = pickle.loads(checkpoint['gbm_bytes'])
+            Parameters:
+            -----------
+            state_dict : dict
+            The original state_dict loaded from file, which may contain
+            keys like 'module.layer.weight'.
+
+            Returns:
+            --------
+            OrderedDict
+            A new state_dict with 'module.' removed from any keys.
+            """
+            new_state_dict = OrderedDict()
+            for k, v in state_dict.items():
+                name = k[7:] if k.startswith('module.') else k
+                new_state_dict[name] = v
+            return new_state_dict
+
+        state_dict = torch.load(f"{path}/{name}.pth", map_location=self.device)
+        state_dict = remove_module_prefix(state_dict)
+        self.feature_extractor.load_state_dict(state_dict)
+        self.feature_extractor.to(self.device).eval()
+
+        self.gbm = joblib.load(f"{path}/{name}.pkl")
