@@ -104,6 +104,41 @@
             color: #333;
             margin-top: 20px;
         }
+
+        #model-info {
+            font-size: 14px;
+            color: #666;
+            margin-top: 10px;
+            font-style: italic;
+        }
+
+        .upload-section {
+            margin-top: 15px;
+            text-align: center;
+        }
+
+        .upload-label {
+            display: block;
+            margin-bottom: 10px;
+            font-size: 16px;
+            color: #555;
+        }
+
+        .source-controls {
+            display: flex;
+            margin: 10px 0;
+        }
+
+        .source-btn {
+            background-color: #6c757d;
+            margin: 0 5px;
+            font-size: 14px;
+            padding: 8px 16px;
+        }
+
+        .source-btn.active {
+            background-color: #007bff;
+        }
     </style>
 </head>
 <body>
@@ -111,7 +146,7 @@
 <h1>Age Detection</h1>
 
 <div class="instructions">
-    Allow camera access → Choose a model → Click the button to predict age
+    Choose input source → Select model → Click predict
 </div>
 
 <div class="container">
@@ -119,6 +154,11 @@
         <div id="video-container">
             <video id="webcam" autoplay muted></video>
             <canvas id="overlay"></canvas>
+        </div>
+        <div class="source-controls">
+            <button id="camera-btn" class="source-btn active" onclick="switchToCamera()">Camera</button>
+            <button id="upload-btn" class="source-btn" onclick="document.getElementById('image-upload').click()">Upload Image</button>
+            <input type="file" id="image-upload" accept="image/*" style="display:none;">
         </div>
     </div>
 
@@ -129,45 +169,269 @@
             <option value="resnet_50">ResNet-50</option>
             <option value="resnext_101">ResNeXt-101</option>
         </select>
-        <button onclick="captureAndSend()">Capture & Predict</button>
+        <button onclick="captureAndSend()">Predict Age</button>
         <div id="result"></div>
+        <div id="model-info"></div>
     </div>
 </div>
 
 <script>
     const video = document.getElementById("webcam");
+    const overlay = document.getElementById("overlay");
+    const cameraBtnEl = document.getElementById("camera-btn");
+    const uploadBtnEl = document.getElementById("upload-btn");
 
+    // Track input source and data
+    let currentInputSource = "camera";
+    let currentUploadedImage = null;
+    let uploadedImageObj = null;
+
+    // Store original image dimensions for face box calculation
+    let originalWidth = 640;
+    let originalHeight = 480;
+    let cameraStream = null;
+
+    // Initialize camera
     async function setupCamera() {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        video.srcObject = stream;
+        try {
+            cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            video.srcObject = cameraStream;
+
+            // Get actual video dimensions once metadata is loaded
+            video.onloadedmetadata = function() {
+                originalWidth = video.videoWidth;
+                originalHeight = video.videoHeight;
+                console.log(`Video dimensions: ${originalWidth}x${originalHeight}`);
+
+                // Make sure overlay has the same dimensions
+                updateCanvasSize();
+            };
+
+            video.style.display = "block";
+        } catch (error) {
+            console.error("Error accessing camera:", error);
+            alert("Could not access the camera. Please check your permissions.");
+        }
     }
 
+    // Initialize on page load
     setupCamera();
 
-    function captureAndSend() {
-        const canvas = document.createElement("canvas");
-        canvas.width = video.videoWidth || 640;
-        canvas.height = video.videoHeight || 480;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    function updateCanvasSize() {
+        overlay.width = video.videoWidth || 640;
+        overlay.height = video.videoHeight || 480;
+    }
 
-        const imageData = canvas.toDataURL("image/jpeg");
+    function switchToCamera() {
+        if (currentInputSource !== "camera") {
+            // Update UI
+            cameraBtnEl.classList.add("active");
+            uploadBtnEl.classList.remove("active");
+
+            // Clear the uploaded image
+            currentUploadedImage = null;
+            uploadedImageObj = null;
+
+            // Show the video stream
+            video.style.display = "block";
+
+            // Clear the overlay
+            const ctx = overlay.getContext("2d");
+            ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+            // Update current source
+            currentInputSource = "camera";
+
+            // If camera was stopped, restart it
+            if (!video.srcObject) {
+                setupCamera();
+            }
+        }
+    }
+
+    function switchToUploadedImage() {
+        if (currentInputSource !== "uploaded" || !currentUploadedImage) {
+            return;
+        }
+
+        // Update UI
+        cameraBtnEl.classList.remove("active");
+        uploadBtnEl.classList.add("active");
+
+        // Stop the video stream to save resources
+        if (video.srcObject) {
+            const stream = video.srcObject;
+            const tracks = stream.getTracks();
+            tracks.forEach(track => track.stop());
+            video.srcObject = null;
+        }
+
+        // Hide the video
+        video.style.display = "none";
+
+        // Draw the uploaded image on the overlay
+        if (uploadedImageObj) {
+            const ctx = overlay.getContext("2d");
+
+            // Clear previous content
+            ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+            // Ensure the canvas is the right size
+            overlay.width = 640;
+            overlay.height = 480;
+
+            // Draw the image
+            ctx.drawImage(uploadedImageObj, 0, 0, uploadedImageObj.width, uploadedImageObj.height, 0, 0, overlay.width, overlay.height);
+        }
+    }
+
+    // Handle image uploads
+    document.getElementById('image-upload').addEventListener('change', function(e) {
+        if (e.target.files && e.target.files[0]) {
+            const reader = new FileReader();
+
+            reader.onload = function(event) {
+                // Get image data
+                currentUploadedImage = event.target.result;
+
+                // Create an image object to get dimensions
+                uploadedImageObj = new Image();
+                uploadedImageObj.onload = function() {
+                    // Store original image dimensions
+                    originalWidth = uploadedImageObj.width;
+                    originalHeight = uploadedImageObj.height;
+                    console.log(`Original image dimensions: ${originalWidth}x${originalHeight}`);
+
+                    // Switch to uploaded image mode
+                    currentInputSource = "uploaded";
+                    switchToUploadedImage();
+                };
+                uploadedImageObj.src = currentUploadedImage;
+            };
+
+            reader.readAsDataURL(e.target.files[0]);
+        }
+    });
+
+    function captureAndSend() {
+        // Show loading state
+        document.getElementById("result").innerText = "Processing...";
+        document.getElementById("model-info").innerText = "";
+
+        // Clear previous prediction overlays but keep the image
+        const ctx = overlay.getContext("2d");
+        if (currentInputSource === "uploaded" && uploadedImageObj) {
+            // Redraw the uploaded image
+            ctx.clearRect(0, 0, overlay.width, overlay.height);
+            ctx.drawImage(uploadedImageObj, 0, 0, uploadedImageObj.width, uploadedImageObj.height, 0, 0, overlay.width, overlay.height);
+        } else {
+            // Just clear the canvas for camera input
+            ctx.clearRect(0, 0, overlay.width, overlay.height);
+        }
+
+        let imageData;
+
+        // Get the appropriate image data based on current input source
+        if (currentInputSource === "uploaded" && currentUploadedImage) {
+            imageData = currentUploadedImage;
+        } else {
+            // Capture from video
+            const canvas = document.createElement("canvas");
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            imageData = canvas.toDataURL("image/jpeg");
+        }
+
         const selectedModel = document.getElementById("model-select").value;
 
         fetch("/predict", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ image: imageData, model: selectedModel })
+            body: JSON.stringify({
+                image: imageData,
+                model: selectedModel
+            })
         })
         .then(response => response.json())
         .then(data => {
-            document.getElementById("result").innerText =
-                data.age ? `Predicted Age: ${data.age}, Gender: ${data.gender}` : "Prediction failed.";
+            if (data.error) {
+                document.getElementById("result").innerText = "Prediction failed: " + data.error;
+                document.getElementById("model-info").innerText = "";
+            } else {
+                document.getElementById("result").innerText =
+                    data.age ? `Predicted Age: ${data.age}` : "Prediction failed.";
+
+                // Display which model was used
+                const modelUsed = data.model_used || selectedModel;
+                document.getElementById("model-info").innerText = `Model used: ${modelUsed}`;
+
+                // Draw the detection overlay
+                drawOverlay(data);
+            }
         })
         .catch(error => {
             console.error("Prediction failed:", error);
             document.getElementById("result").innerText = "Prediction failed.";
+            document.getElementById("model-info").innerText = "";
         });
+    }
+
+    function drawOverlay(data) {
+        const ctx = overlay.getContext("2d");
+
+        if (!data.age) return;
+
+        // Draw rectangle around the face
+        ctx.strokeStyle = "#1E90FF"; // Blue
+        ctx.lineWidth = 3;
+
+        // Use actual face location if available
+        if (data.face_location) {
+            console.log("Using actual face location:", data.face_location);
+
+            // Scale factors to convert from original image to canvas size
+            const scaleX = overlay.width / originalWidth;
+            const scaleY = overlay.height / originalHeight;
+
+            // Get coordinates from face_location
+            const x = data.face_location.x * scaleX;
+            const y = data.face_location.y * scaleY;
+            const w = data.face_location.w * scaleX;
+            const h = data.face_location.h * scaleY;
+
+            // Draw the face rectangle
+            ctx.strokeRect(x, y, w, h);
+
+            // Add age text above the face
+            ctx.font = "24px Arial";
+            ctx.fillStyle = "white";
+            ctx.strokeStyle = "black";
+            ctx.lineWidth = 1;
+
+            const text = `${data.age} years`;
+            ctx.fillText(text, x, y - 10);
+            ctx.strokeText(text, x, y - 10);
+        } else {
+            // Fallback to drawing a centered rectangle
+            console.log("Using fallback centered rectangle");
+            const faceSize = overlay.width * 0.4; // Approximate size
+            const x = (overlay.width - faceSize) / 2;
+            const y = (overlay.height - faceSize) / 2;
+
+            ctx.strokeRect(x, y, faceSize, faceSize);
+
+            // Add age text
+            ctx.font = "24px Arial";
+            ctx.fillStyle = "white";
+            ctx.strokeStyle = "black";
+            ctx.lineWidth = 1;
+
+            const text = `${data.age} years`;
+            ctx.fillText(text, x, y - 10);
+            ctx.strokeText(text, x, y - 10);
+        }
     }
 </script>
 
